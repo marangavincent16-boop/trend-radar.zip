@@ -6,6 +6,7 @@ const { XMLParser } = require("fast-xml-parser");
 
 const app = express();
 app.use(express.urlencoded({ extended: false }));
+app.use(express.json({ limit: "10kb" }));
 
 // Edit this list to change which countries you track.
 const COUNTRIES = ["US", "GB", "IN", "NG", "BR", "JP", "KE"];
@@ -222,6 +223,41 @@ a:focus-visible,button:focus-visible,input:focus-visible{outline:2px solid var(-
 .tpop button{display:flex;align-items:center;gap:10px;width:100%;padding:10px;border:1px solid transparent;border-radius:8px;background:none;color:var(--text);font:12px 'Space Mono',monospace;cursor:pointer;text-align:left}
 .tpop button:hover,.tpop button.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 10%,transparent)}
 .tpop i{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,var(--a),var(--b));flex-shrink:0}
+body{padding-bottom:78px}
+.shell{display:flex;flex-direction:column}
+.nav{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;padding:6px 6px calc(6px + env(safe-area-inset-bottom));background:color-mix(in srgb,var(--bg) 82%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--border)}
+.navb{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 2px;background:none;border:none;color:var(--muted);font:10px 'Space Mono',monospace;cursor:pointer;border-radius:10px;transition:background .2s,color .2s}
+.navb.on{color:var(--accent);background:color-mix(in srgb,var(--accent) 13%,transparent)}
+.ic{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;animation:draw 1.1s ease}
+@keyframes draw{from{stroke-dasharray:60;stroke-dashoffset:60}to{stroke-dasharray:60;stroke-dashoffset:0}}
+@keyframes bob{50%{transform:translateY(-3px) rotateY(180deg)}}
+.navb.on .ic{animation:bob 2.6s ease-in-out infinite}
+.btn-out{display:inline-flex;align-items:center;gap:6px}.btn-out .ic{width:15px;height:15px;animation:none}
+@media(max-width:600px){.lbl{display:none}}
+@media(min-width:900px){
+body{padding-bottom:0}.shell{flex-direction:row}
+.nav{position:sticky;top:64px;align-self:flex-start;flex-direction:column;width:210px;height:calc(100vh - 64px);padding:18px 12px;border-top:none;border-right:1px solid var(--border);gap:6px}
+.navb{flex:none;flex-direction:row;gap:12px;font-size:13px;padding:12px 14px}
+main{flex:1;max-width:1000px;margin:0;width:100%}}
+.hero{margin-bottom:18px;perspective:700px}
+.h3d{font-family:'Bricolage Grotesque',sans-serif;font-weight:800;font-size:clamp(30px,8vw,52px);line-height:1.05;letter-spacing:-.02em;transform:rotateX(var(--hx,0deg)) rotateY(var(--hy,0deg));transform-style:preserve-3d;transition:transform .15s;overflow-wrap:anywhere}
+.h3d span{display:inline-block;color:var(--text);text-shadow:1px 1px 0 var(--accent),2px 2px 0 var(--accent),3px 3px 0 color-mix(in srgb,var(--accent) 70%,#000),4px 4px 0 color-mix(in srgb,var(--accent) 50%,#000),6px 9px 16px rgba(0,0,0,.45);animation:flip .9s cubic-bezier(.16,1,.3,1) both;animation-delay:calc(var(--k)*40ms)}
+@keyframes flip{from{opacity:0;transform:rotateX(-90deg) translateZ(-40px)}}
+.hsub{color:var(--muted);font-size:12px;margin-top:12px}
+.rt{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.xbtn{display:inline-flex;align-items:center;gap:4px;padding:3px 9px;border:1px solid var(--accent);border-radius:999px;color:var(--accent);font-size:11px;text-decoration:none;font-weight:700;white-space:nowrap}
+.xbtn:hover{background:var(--accent);color:var(--on)}.xbtn .ic{width:12px;height:12px;animation:none}
+.src{color:var(--muted)}
+.flash{animation:rise .75s both,flash 2.4s ease}
+@keyframes flash{0%,40%{box-shadow:0 0 0 2px var(--accent2),0 0 24px var(--accent2)}}
+.chips a{cursor:pointer}
+.gform{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:8px}.gform .gw{grid-column:1/-1}.gform .fi{margin:0}
+.note{font-size:11px;color:var(--muted);line-height:1.6;margin:12px 0}
+.chart{width:100%;height:140px;border:1px solid var(--border);border-radius:12px;background:color-mix(in srgb,var(--surface) 80%,transparent);margin-bottom:14px}
+.glog{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-top:1px solid var(--border);font-size:12px}
+.glog small{display:block;color:var(--muted);margin-top:2px;overflow-wrap:anywhere}
+.up{color:var(--success);font-weight:700}.down{color:var(--danger);font-weight:700}.warnb{color:var(--warning);font-weight:700}
+.banner{padding:10px 14px;border:1px solid var(--warning);border-radius:10px;color:var(--warning);font-size:12px;margin-bottom:14px}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}`;
 
 const shell = (inner) => `<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -245,18 +281,57 @@ app.post("/login", async (req, res) => {
 });
 app.get("/logout", (req, res) => { res.clearCookie("tr_session"); res.redirect("/"); });
 
-// ---------- Dashboard ----------
-const row = (t, i, max) => `<li class="row" style="--i:${Math.min(i, 14)}"><span class="rank${i < 3 ? " r" + (i + 1) : ""}">${i + 1}</span><div>
-<a class="title" href="${esc(t.url || "#")}" target="_blank" rel="noreferrer">${esc(t.title)}</a>
-<div class="meta">${esc(t.country)} · ${esc(t.source)} · ${t.volume.toLocaleString("en-US")} ${t.source === "hackernews" ? "points" : "searches"}${t.isNew ? ' · <span class="tag">NEW</span>' : ""} · seen ${t.ageMinutes} min ago</div></div>
-<span class="score">${t.score}</span><div class="bar"><b style="--w:${Math.max(4, Math.round((t.score / (max || 1)) * 100))}%"></b></div></li>`;
+// ---------- Live data API ----------
+const needAuth = (req, res, next) => (authed(req) ? next() : res.status(401).json({ error: "login" }));
+let refreshing = null;
+const refresh = () => refreshing || (refreshing = runFetch().catch(() => 0).finally(() => { refreshing = null; }));
 
-const hash = (str) => { let h = 7; for (const c of String(str)) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h; };
-const radar = (items) => `<div class="radar-wrap"><div class="radar">${items.slice(0, 14).map((t, i) => {
-  const ang = ((hash(t.title) % 360) * Math.PI) / 180, r = 10 + i * 2.6;
-  return `<i class="blip" style="left:${(50 + r * Math.cos(ang)).toFixed(1)}%;top:${(50 + r * Math.sin(ang)).toFixed(1)}%;--d:${(i * 0.25).toFixed(2)}s"></i>`;
-}).join("")}</div></div>`;
+app.get("/api/trends", needAuth, async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  try {
+    const m0 = await minutesSinceUpdate();
+    if (m0 === null || m0 >= 10) await Promise.race([refresh(), new Promise((r) => setTimeout(r, 7000))]);
+    const [all, mins] = await Promise.all([getAll(), minutesSinceUpdate()]);
+    res.json({ mins, trends: all.slice(0, 150) });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
 
+// Growth log: you enter your follower count; the app shows what lines up with growth.
+let growthReady = null;
+const ensureGrowth = () => growthReady || (growthReady = db()`create table if not exists growth_log (
+  day date primary key, followers integer not null, note text not null default '', created_at timestamptz not null default now())`
+  .catch((e) => { growthReady = null; throw e; }));
+
+app.get("/api/growth", needAuth, async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  try {
+    await ensureGrowth();
+    const rows = await db()`select to_char(day, 'YYYY-MM-DD') as day, followers, note from growth_log order by day desc limit 120`;
+    res.json({ entries: rows.reverse() });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+app.post("/api/growth", needAuth, async (req, res) => {
+  const b = req.body || {};
+  const followers = Number(b.followers);
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(b.day || "") ? b.day : new Date().toISOString().slice(0, 10);
+  const note = String(b.note || "").slice(0, 200);
+  if (!Number.isInteger(followers) || followers < 0 || followers > 1e9) return res.status(400).json({ error: "Enter a whole number of followers." });
+  try {
+    await ensureGrowth();
+    await db()`insert into growth_log (day, followers, note) values (${day}, ${followers}, ${note})
+      on conflict (day) do update set followers = excluded.followers, note = excluded.note`;
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+// ---------- The panel ----------
 const PLAN = [
   ["Morning", "Check the top 5 trends in your lane and post 1 to 2 takes with your own angle"],
   ["Morning", "Reply to 3 fresh posts (under 60 minutes old) from accounts with 10K to 500K followers"],
@@ -265,73 +340,108 @@ const PLAN = [
   ["Evening", "Post once more on a rising trend"],
   ["Evening", "Answer every reply you received today"],
 ];
+const THEMES = [["neon", "Neon", "#2fd69a", "#e63559"], ["violet", "Violet", "#a78bfa", "#f472b6"], ["ocean", "Ocean", "#38bdf8", "#34d399"], ["sunset", "Sunset", "#fb923c", "#f43f5e"], ["paper", "Paper (light)", "#0d7a55", "#e63559"]];
+const NAV = [["overview", "grid", "Overview"], ["live", "bolt", "Live"], ["countries", "globe", "Countries"], ["plan", "list", "Plan"], ["growth", "trend", "Growth"]];
+const SPRITE = `<svg width="0" height="0" style="position:absolute" aria-hidden="true"><defs>
+<symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+<symbol id="i-bolt" viewBox="0 0 24 24"><path d="M13 2 4 14h7l-1 8 9-12h-7z"/></symbol>
+<symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18"/></symbol>
+<symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M3.5 6l1.3 1.3L7 5M3.5 12l1.3 1.3L7 11M3.5 18l1.3 1.3L7 17"/></symbol>
+<symbol id="i-trend" viewBox="0 0 24 24"><path d="m3 17 6-6 4 4 8-8M15 7h6v6"/></symbol>
+<symbol id="i-theme" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3v18"/></symbol>
+<symbol id="i-out" viewBox="0 0 24 24"><path d="M10 4H5v16h5M15 8l4 4-4 4M19 12H9"/></symbol>
+<symbol id="i-ext" viewBox="0 0 24 24"><path d="M7 17 17 7M8 7h9v9"/></symbol>
+</defs></svg>`;
 
-app.get("/", async (req, res) => {
+const CLIENT_JS = String.raw`
+function $(s,r){return (r||document).querySelector(s)}
+function $$(s,r){return Array.prototype.slice.call((r||document).querySelectorAll(s))}
+function esc(s){return String(s).replace(/[&<>"']/g,function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]})}
+var data={trends:[],mins:null},seen=null,fresh={},country=null,growth=[],last=0,tab="overview",busy=false;
+var TABS={overview:["Command Center","Everything rising right now"],live:["Live Trends","Tap any trend to open it on X"],countries:["Countries","Top topics in each country"],plan:["Daily Plan","Reply first, post second"],growth:["Growth Lab","Log your followers, see what works"]};
+function xurl(t){return "https://x.com/search?q="+encodeURIComponent(t)+"&src=typed_query&f=live"}
+function ic(n){return '<svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-'+n+'"/></svg>'}
+function hash(s){var h=7;for(var i=0;i<s.length;i++)h=(h*31+s.charCodeAt(i))>>>0;return h}
+function key(t){return t.source+"|"+t.country+"|"+t.title}
+function heading(text){var h=$("#h");h.setAttribute("aria-label",text);h.innerHTML=text.split("").map(function(c,i){return '<span aria-hidden="true" style="--k:'+i+'">'+(c===" "?"&nbsp;":esc(c))+'</span>'}).join("")}
+function row(t,i,max){
+ return '<li class="row'+(fresh[key(t)]?' flash':'')+'" style="--i:'+Math.min(i,14)+'"><span class="rank'+(i<3?' r'+(i+1):'')+'">'+(i+1)+'</span><div><a class="title" href="'+xurl(t.title)+'" target="_blank" rel="noreferrer">'+esc(t.title)+'</a><div class="meta">'+esc(t.country)+' · '+esc(t.source)+' · '+t.volume.toLocaleString("en-US")+(t.source==="hackernews"?" points":" searches")+(t.isNew?' · <span class="tag">NEW</span>':'')+' · seen '+t.ageMinutes+' min ago'+(t.url?' · <a class="src" href="'+esc(t.url)+'" target="_blank" rel="noreferrer">source</a>':'')+'</div></div><div class="rt"><span class="score">'+t.score+'</span><a class="xbtn" href="'+xurl(t.title)+'" target="_blank" rel="noreferrer">'+ic("ext")+'Open on X</a></div><div class="bar"><b style="--w:'+Math.max(4,Math.round(t.score/(max||1)*100))+'%"></b></div></li>'}
+function tilt(root){$$(".stat,.row,.card",root).forEach(function(el){
+ el.addEventListener("pointermove",function(e){var r=el.getBoundingClientRect(),x=(e.clientX-r.left)/r.width-.5,y=(e.clientY-r.top)/r.height-.5;el.style.setProperty("--ry",(x*10).toFixed(1)+"deg");el.style.setProperty("--rx",(-y*10).toFixed(1)+"deg")});
+ el.addEventListener("pointerleave",function(){el.style.setProperty("--rx","0deg");el.style.setProperty("--ry","0deg")})})}
+function countUp(root){$$("[data-count]",root).forEach(function(el){var n=+el.dataset.count,t0=performance.now();(function f(t){var p=Math.min((t-t0)/900,1);el.textContent=Math.round(n*(1-Math.pow(1-p,3)));if(p<1)requestAnimationFrame(f)})(t0)})}
+function stat(i,l,v,count){return '<div class="stat" style="--i:'+i+'"><div class="stat-l">'+l+'</div><div class="stat-v"'+(count?' data-count="'+v+'"':'')+'>'+v+'</div></div>'}
+function radar(a){var b=a.slice(0,14).map(function(t,i){var ang=(hash(t.title)%360)*Math.PI/180,r=10+i*2.6;return '<i class="blip" style="left:'+(50+r*Math.cos(ang)).toFixed(1)+'%;top:'+(50+r*Math.sin(ang)).toFixed(1)+'%;--d:'+(i*.25).toFixed(2)+'s"></i>'}).join("");return '<div class="radar-wrap"><div class="radar">'+b+'</div></div>'}
+function renderOverview(){var a=data.trends,top=a[0],cs={};a.forEach(function(t){cs[t.country]=1});var max=top?top.score:1,p=$("#p-overview");
+ p.innerHTML='<div class="stats">'+stat(0,"Trends now",a.length,true)+stat(1,"Countries live",Object.keys(cs).length,true)+'<div class="stat" style="--i:2"><div class="stat-l">Fastest riser</div><div class="stat-v sm">'+(top?'<a class="title" href="'+xurl(top.title)+'" target="_blank" rel="noreferrer">'+esc(top.title)+'</a>':"None yet")+'</div></div>'+stat(3,"Last update",data.mins===null?"-":data.mins+"m",false)+'</div>'+radar(a)+'<h2>Top 5 right now</h2>'+(a.length?'<ol>'+a.slice(0,5).map(function(t,i){return row(t,i,max)}).join("")+'</ol>':'<p class="empty">No trends yet. They appear after the first fetch.</p>');
+ countUp(p);tilt(p)}
+function renderLive(){var a=country?data.trends.filter(function(t){return t.country===country}):data.trends,l=a.slice(0,50),p=$("#p-live");
+ p.innerHTML='<div class="chips">'+['All'].concat(COUNTRIES).map(function(c){var on=(c==="All"&&!country)||c===country;return '<a data-c="'+c+'" class="'+(on?'on':'')+'">'+c+'</a>'}).join("")+'</div>'+(l.length?'<ol>'+l.map(function(t,i){return row(t,i,l[0].score)}).join("")+'</ol>':'<p class="empty">No trends for this country yet.</p>');
+ tilt(p)}
+function renderCountries(){var p=$("#p-countries");
+ p.innerHTML='<div class="grid">'+COUNTRIES.map(function(c,k){var it=data.trends.filter(function(t){return t.country===c});return '<div class="card" style="--i:'+k+'"><h3>'+c+' <small>'+it.length+' trending</small></h3>'+(it.slice(0,3).map(function(t){return '<a href="'+xurl(t.title)+'" target="_blank" rel="noreferrer">'+esc(t.title)+'</a>'}).join("")||'<span class="meta">No data yet</span>')+(it.length>3?'<button class="btn-out" data-see="'+c+'">See all '+it.length+'</button>':'')+'</div>'}).join("")+'</div>';
+ tilt(p)}
+function today(){return new Date(Date.now()-new Date().getTimezoneOffset()*6e4).toISOString().slice(0,10)}
+function analyze(e){var out=[],pos=[];for(var i=0;i<e.length;i++){var g=null,pd=null;if(i>0){var gap=Math.max(1,Math.round((new Date(e[i].day)-new Date(e[i-1].day))/864e5));g=e[i].followers-e[i-1].followers;pd=g/gap;if(pd>0)pos.push(pd)}out.push({e:e[i],g:g,pd:pd})}
+ pos.sort(function(a,b){return a-b});var med=pos.length?pos[Math.floor(pos.length/2)]:0;
+ out.forEach(function(o){o.spike=pos.length>=3&&o.pd!==null&&o.pd>=Math.max(10,3*med)});return out}
+function chart(e){if(e.length<2)return '<p class="empty">Log at least 2 days to see your chart.</p>';var t0=new Date(e[0].day).getTime(),span=Math.max(1,new Date(e[e.length-1].day).getTime()-t0),mn=Math.min.apply(null,e.map(function(x){return x.followers})),mx=Math.max.apply(null,e.map(function(x){return x.followers})),rg=Math.max(1,mx-mn);
+ var pts=e.map(function(x){return (10+(new Date(x.day).getTime()-t0)/span*280).toFixed(1)+","+(100-(x.followers-mn)/rg*80).toFixed(1)}).join(" ");
+ return '<svg class="chart" viewBox="0 0 300 120" preserveAspectRatio="none" role="img" aria-label="Followers over time"><defs><linearGradient id="gg" x1="0" x2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent2)"/></linearGradient></defs><polyline points="'+pts+'" fill="none" stroke="url(#gg)" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>'}
+function renderGrowth(){var e=growth,an=analyze(e),p=$("#p-growth"),h='<form class="gform" id="gf"><input class="fi" id="gd" type="date" value="'+today()+'" required aria-label="Date"><input class="fi" id="gc" type="number" inputmode="numeric" min="0" placeholder="Followers now" required aria-label="Followers"><input class="fi gw" id="gt" type="text" maxlength="200" placeholder="What did you do? (trend used, post, replies)" aria-label="Note"><button class="btn gw" type="submit">Save</button></form><div class="err" id="gm"></div>';
+ if(e.length){var L=e[e.length-1],F=e[0],base=F,lim=new Date(L.day).getTime()-7*864e5;e.forEach(function(x){if(new Date(x.day).getTime()<=lim)base=x});
+  var days=Math.max(1,(new Date(L.day)-new Date(F.day))/864e5),best=null;an.forEach(function(o){if(o.pd!==null&&(!best||o.pd>best.pd))best=o});
+  var two=e.length>1;
+  h+='<div class="stats">'+stat(0,"Followers now",L.followers.toLocaleString("en-US"),false)+stat(1,"Last 7 days",two?(L.followers-base.followers>=0?"+":"")+(L.followers-base.followers):"-",false)+stat(2,"Avg per day",two?((L.followers-F.followers)/days).toFixed(1):"-",false)+stat(3,"Best day",best&&best.pd>0?"+"+Math.round(best.pd):"-",false)+'</div>'+chart(e);
+  h+='<h2>Log</h2>'+an.slice().reverse().map(function(o){var g=o.g===null?'':(o.g>=0?'<span class="up">+'+o.g+'</span>':'<span class="down">'+o.g+'</span>');return '<div class="glog"><div><b>'+esc(o.e.day)+'</b> '+(o.spike?'<span class="warnb">spike: check the source</span>':'')+(o.e.note?'<small>'+esc(o.e.note)+'</small>':'')+'</div><div style="text-align:right">'+o.e.followers.toLocaleString("en-US")+'<br>'+g+'</div></div>'}).join("")}
+ else h+='<p class="empty">No entries yet. Add today’s follower count above.</p>';
+ h+='<p class="note">X does not label followers as organic or bought. This tracks the counts and notes you log, so you can see which activity lines up with growth, and spot sudden jumps worth checking.</p>';
+ p.innerHTML=h;tilt(p);
+ $("#gf").onsubmit=function(ev){ev.preventDefault();$("#gm").textContent="";fetch("/api/growth",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({day:$("#gd").value,followers:$("#gc").value,note:$("#gt").value})}).then(function(r){return r.json()}).then(function(j){if(j.error){$("#gm").textContent=j.error}else{loadGrowth()}}).catch(function(){$("#gm").textContent="Could not save. Check your connection."})}}
+function loadGrowth(){return fetch("/api/growth").then(function(r){if(r.status===401){location.reload();throw 0}return r.json()}).then(function(j){if(j.error){$("#p-growth").innerHTML='<div class="banner">Could not load growth data: '+esc(j.error)+'</div>'}else{growth=j.entries;renderGrowth()}}).catch(function(){})}
+function renderAll(){var m=data.mins;$("#dot").className="dot"+(m===null||m>60?" err":m>25?" warn":"");$("#sync").textContent=m===null?"No data":m<=1?"Just now":m+" min ago";
+ renderOverview();renderLive();renderCountries();fresh={}}
+function load(){if(busy)return;busy=true;last=Date.now();return fetch("/api/trends").then(function(r){if(r.status===401){location.reload();throw 0}return r.json()}).then(function(j){
+ if(j.error){$("#banner").hidden=false;$("#banner").textContent="Could not load trends: "+j.error;return}
+ $("#banner").hidden=true;var next={};j.trends.forEach(function(t){next[key(t)]=1;if(seen&&!seen[key(t)])fresh[key(t)]=1});seen=next;data=j;renderAll()}).catch(function(){}).then(function(){busy=false})}
+function show(id){if(!TABS[id])id="overview";tab=id;$$(".pane").forEach(function(p){p.classList.toggle("active",p.id==="p-"+id)});$$(".navb").forEach(function(b){b.classList.toggle("on",b.dataset.tab===id)});
+ heading(TABS[id][0]);$("#hs").textContent=TABS[id][1];try{history.replaceState(null,"","#"+id)}catch(e){}if(id==="growth")loadGrowth()}
+$$(".navb").forEach(function(b){b.onclick=function(){show(b.dataset.tab)}});
+document.addEventListener("click",function(e){var c=e.target.closest("[data-c]");if(c){e.preventDefault();var v=c.dataset.c;country=v==="All"?null:v;renderLive();return}var s=e.target.closest("[data-see]");if(s){country=s.dataset.see;renderLive();show("live")}});
+$(".hero").addEventListener("pointermove",function(e){var r=this.getBoundingClientRect(),x=(e.clientX-r.left)/r.width-.5,y=(e.clientY-r.top)/r.height-.5;var h=$("#h");h.style.setProperty("--hy",(x*12).toFixed(1)+"deg");h.style.setProperty("--hx",(-y*12).toFixed(1)+"deg")});
+$(".hero").addEventListener("pointerleave",function(){var h=$("#h");h.style.setProperty("--hx","0deg");h.style.setProperty("--hy","0deg")});
+var key2="tr-plan-"+today(),state={};try{state=JSON.parse(localStorage.getItem(key2)||"{}")}catch(e){}
+var boxes=$$("input[data-i]");function prog(){var n=0;boxes.forEach(function(b){if(b.checked)n++});$("#prog").textContent=n+" of "+boxes.length+" done today"}
+boxes.forEach(function(b){b.checked=!!state[b.dataset.i];b.onchange=function(){state[b.dataset.i]=b.checked;try{localStorage.setItem(key2,JSON.stringify(state))}catch(e){}prog()}});prog();
+var tp=$("#tpop"),tb=$("#theme");function mark(){var c=document.documentElement.dataset.theme||"neon";$$("button",tp).forEach(function(x){x.classList.toggle("on",x.dataset.t===c)})}
+tb.onclick=function(e){e.stopPropagation();tp.classList.toggle("open");mark()};
+$$("button",tp).forEach(function(x){x.onclick=function(){document.documentElement.dataset.theme=x.dataset.t;try{localStorage.setItem("tr-theme",x.dataset.t)}catch(e){}mark();tp.classList.remove("open")}});
+document.addEventListener("click",function(e){if(!tp.contains(e.target))tp.classList.remove("open")});
+var ip;window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();ip=e;var b=$("#install");b.hidden=false;b.onclick=function(){ip.prompt();b.hidden=true}});
+setInterval(function(){if(!document.hidden)load()},60000);
+document.addEventListener("visibilitychange",function(){if(!document.hidden&&Date.now()-last>30000)load()});
+show(location.hash.slice(1));load();
+`;
+
+const APP_HTML = `${SPRITE}<header>
+<div class="brand"><div class="brand-icon">⚡</div><div><div class="brand-text">Trend<span>Radar</span></div><div class="brand-sub">Worldwide trend desk</div></div></div>
+<div class="hr"><div class="sync"><span class="dot err" id="dot"></span><span id="sync">Loading</span></div>
+<button class="btn-out" id="install" hidden>INSTALL</button>
+<div class="themes"><button class="btn-out" id="theme" aria-label="Choose theme"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-theme"/></svg><span class="lbl">THEME</span></button><div class="tpop" id="tpop">${THEMES.map((t) => `<button data-t="${t[0]}"><i style="--a:${t[2]};--b:${t[3]}"></i>${t[1]}</button>`).join("")}</div></div>
+<a class="btn-out" href="/logout" aria-label="Log out"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-out"/></svg><span class="lbl">LOG OUT</span></a></div></header>
+<div class="shell"><nav class="nav" aria-label="Sections">${NAV.map((n) => `<button class="navb" data-tab="${n[0]}"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-${n[1]}"/></svg>${n[2]}</button>`).join("")}</nav>
+<main><div class="banner" id="banner" hidden></div>
+<div class="hero"><h1 class="h3d" id="h">Trend Radar</h1><p class="hsub" id="hs"></p></div>
+<section class="pane" id="p-overview"></section><section class="pane" id="p-live"></section><section class="pane" id="p-countries"></section>
+<section class="pane" id="p-plan"><div class="prog" id="prog"></div>${PLAN.map((p, i) => `<label class="chk"><input type="checkbox" data-i="${i}"><span><b>${p[0]}:</b> ${esc(p[1])}</span></label>`).join("")}
+<h2>Rules</h2><p class="meta" style="line-height:1.7">Reply first, post second. Answer every reply within the first hour. Never buy followers or use follow/unfollow. Never automate replies or likes: you approve every post yourself.</p></section>
+<section class="pane" id="p-growth"></section></main></div>
+<script>var COUNTRIES=${JSON.stringify([...COUNTRIES, "GLOBAL"])};${CLIENT_JS}</script>`;
+
+app.get("/", (req, res) => {
   res.set("Cache-Control", "no-store");
   if (!authed(req)) return res.type("html").send(loginPage(PASS() ? "" : "APP_PASSWORD is not set in Vercel yet."));
-  const names = [...COUNTRIES, "GLOBAL"];
-  const selected = names.includes(req.query.country) ? req.query.country : null;
-  let all = [], mins = null, error = "";
-  try {
-    const m0 = await minutesSinceUpdate();
-    if (m0 === null || m0 >= 10) await Promise.race([runFetch().catch(() => 0), new Promise((r) => setTimeout(r, 7000))]);
-    [all, mins] = await Promise.all([getAll(), minutesSinceUpdate()]);
-  }
-  catch (e) { error = String(e.message || e); }
-
-  const list = (selected ? all.filter((t) => t.country === selected) : all).slice(0, 50);
-  const dot = mins === null ? "err" : mins <= 25 ? "" : mins <= 60 ? "warn" : "err";
-  const top = all[0];
-  const trendsPane = error
-    ? `<p class="empty">Could not load trends: ${esc(error)}. Check DATABASE_URL.</p>`
-    : list.length === 0 ? `<p class="empty">No trends yet. Run the fetch link once, then reload.</p>` : `${radar(list)}<ol>${list.map((t, i) => row(t, i, list[0].score)).join("")}</ol>`;
-  const countryPane = names.map((c) => {
-    const items = all.filter((t) => t.country === c);
-    return `<div class="card" style="--i:${names.indexOf(c)}"><h3>${esc(c)} <small>${items.length} trending</small></h3>${
-      items.slice(0, 3).map((t) => `<a href="${esc(t.url || "#")}" target="_blank" rel="noreferrer">${esc(t.title)}</a>`).join("") || '<span class="meta">No data yet</span>'}</div>`;
-  }).join("");
-
-  res.type("html").send(shell(`<header>
-<div class="brand"><div class="brand-icon">⚡</div><div><div class="brand-text">Trend<span>Radar</span></div><div class="brand-sub">Worldwide trend desk</div></div></div>
-<div class="hr"><div class="sync"><span class="dot ${dot}"></span>${mins === null ? "No data" : mins <= 1 ? "Just now" : mins + " min ago"}</div><button class="btn-out" id="install" hidden>INSTALL</button><div class="themes"><button class="btn-out" id="theme" aria-label="Choose theme">THEME</button><div class="tpop" id="tpop"><button data-t="neon"><i style="--a:#2fd69a;--b:#e63559"></i>Neon</button><button data-t="violet"><i style="--a:#a78bfa;--b:#f472b6"></i>Violet</button><button data-t="ocean"><i style="--a:#38bdf8;--b:#34d399"></i>Ocean</button><button data-t="sunset"><i style="--a:#fb923c;--b:#f43f5e"></i>Sunset</button><button data-t="paper"><i style="--a:#0d7a55;--b:#e63559"></i>Paper (light)</button></div></div><a class="btn-out" href="/logout">LOG OUT</a></div></header>
-<div class="tabs"><button class="nav-tab" data-tab="trends">Trends</button><button class="nav-tab" data-tab="countries">By Country</button><button class="nav-tab" data-tab="plan">Daily Plan</button></div>
-<main>
-<div class="stats">
-<div class="stat" style="--i:0"><div class="stat-l">Trends now</div><div class="stat-v" data-count="${all.length}">${all.length}</div></div>
-<div class="stat" style="--i:1"><div class="stat-l">Countries live</div><div class="stat-v" data-count="${new Set(all.map((t) => t.country)).size}">${new Set(all.map((t) => t.country)).size}</div></div>
-<div class="stat" style="--i:2"><div class="stat-l">Fastest riser</div><div class="stat-v sm">${top ? esc(top.title) : "None yet"}</div></div>
-<div class="stat" style="--i:3"><div class="stat-l">Last update</div><div class="stat-v">${mins === null ? "-" : mins + "m"}</div></div></div>
-<section class="pane" id="p-trends"><div class="chips"><a href="/" class="${selected ? "" : "on"}">All</a>${names.map((c) => `<a href="/?country=${c}" class="${selected === c ? "on" : ""}">${c}</a>`).join("")}</div>${trendsPane}</section>
-<section class="pane" id="p-countries"><div class="grid">${countryPane}</div></section>
-<section class="pane" id="p-plan"><h2>Today’s routine</h2><div class="prog" id="prog"></div>
-${PLAN.map((p, i) => `<label class="chk"><input type="checkbox" data-i="${i}"><span><b>${p[0]}:</b> ${esc(p[1])}</span></label>`).join("")}
-<h2>Rules</h2><p class="meta" style="line-height:1.7">Reply first, post second. Answer every reply within the first hour. Never buy followers or use follow/unfollow. Never automate replies or likes: you approve every post yourself.</p></section>
-</main>
-<script>
-var T=["trends","countries","plan"];
-function show(id){if(T.indexOf(id)<0)id="trends";T.forEach(function(t){document.getElementById("p-"+t).classList.toggle("active",t===id);document.querySelector('[data-tab="'+t+'"]').classList.toggle("active",t===id)});try{history.replaceState(null,"","#"+id)}catch(e){}}
-document.querySelectorAll(".nav-tab").forEach(function(b){b.onclick=function(){show(b.dataset.tab)}});
-show(location.hash.slice(1));
-var key="tr-plan-"+new Date().toISOString().slice(0,10),state={};
-try{state=JSON.parse(localStorage.getItem(key)||"{}")}catch(e){}
-var boxes=document.querySelectorAll('input[data-i]');
-function prog(){var n=0;boxes.forEach(function(b){if(b.checked)n++});document.getElementById("prog").textContent=n+" of "+boxes.length+" done today"}
-boxes.forEach(function(b){b.checked=!!state[b.dataset.i];b.onchange=function(){state[b.dataset.i]=b.checked;try{localStorage.setItem(key,JSON.stringify(state))}catch(e){}prog()}});prog();
-document.querySelectorAll(".stat,.row,.card").forEach(function(el){
-  el.addEventListener("pointermove",function(e){var r=el.getBoundingClientRect(),x=(e.clientX-r.left)/r.width-.5,y=(e.clientY-r.top)/r.height-.5;el.style.setProperty("--ry",(x*10).toFixed(1)+"deg");el.style.setProperty("--rx",(-y*10).toFixed(1)+"deg")});
-  el.addEventListener("pointerleave",function(){el.style.setProperty("--rx","0deg");el.style.setProperty("--ry","0deg")});
-});
-document.querySelectorAll("[data-count]").forEach(function(el){var n=+el.dataset.count,t0=performance.now();(function f(t){var p=Math.min((t-t0)/900,1);el.textContent=Math.round(n*(1-Math.pow(1-p,3)));if(p<1)requestAnimationFrame(f)})(t0)});
-var tp=document.getElementById("tpop"),tb=document.getElementById("theme");
-function mark(){var c=document.documentElement.dataset.theme||"neon";tp.querySelectorAll("button").forEach(function(x){x.classList.toggle("on",x.dataset.t===c)})}
-tb.onclick=function(e){e.stopPropagation();tp.classList.toggle("open");mark()};
-tp.querySelectorAll("button").forEach(function(x){x.onclick=function(){document.documentElement.dataset.theme=x.dataset.t;try{localStorage.setItem("tr-theme",x.dataset.t)}catch(e){}mark();tp.classList.remove("open")}});
-document.addEventListener("click",function(e){if(!tp.contains(e.target))tp.classList.remove("open")});
-var last=Date.now(),ip;
-setInterval(function(){if(!document.hidden&&Date.now()-last>=300000)location.reload()},30000);
-document.addEventListener("visibilitychange",function(){if(!document.hidden&&Date.now()-last>=180000)location.reload()});
-window.addEventListener("beforeinstallprompt",function(e){e.preventDefault();ip=e;var b=document.getElementById("install");b.hidden=false;b.onclick=function(){ip.prompt();b.hidden=true}});
-</script>`));
+  res.type("html").send(shell(APP_HTML));
 });
 
 module.exports = app;
