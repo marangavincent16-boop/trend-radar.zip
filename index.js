@@ -681,6 +681,7 @@ function rateOk(res) {
   return true;
 }
 const cleanStr = (v, n) => String(v == null ? "" : v).replace(/\s+/g, " ").trim().slice(0, n);
+const clipWords = (v, n) => { const t = cleanStr(v, 100000); if (t.length <= n) return t; const cut = t.slice(0, n), i = cut.lastIndexOf(" "); return (i > n * 0.6 ? cut.slice(0, i) : cut).replace(/[\s,;:\-–—]+$/, ""); };
 function parseAiJson(txt) {
   txt = String(txt || "").trim().replace(/^```(?:json)?/i, "").replace(/```$/, "").trim();
   try { return JSON.parse(txt); } catch (e) { const m = txt.match(/\{[\s\S]*\}/); try { return m ? JSON.parse(m[0]) : null; } catch (e2) { return null; } }
@@ -689,9 +690,9 @@ function normalizeOutline(o) {
   if (!o || typeof o !== "object") return null;
   const out = {
     format: o.format === "drama" ? "drama" : "tiktok",
-    title: cleanStr(o.title, 80), logline: cleanStr(o.logline, 200), style: cleanStr(o.style, 160),
-    characters: (Array.isArray(o.characters) ? o.characters : []).slice(0, 3).map((c) => ({ name: cleanStr(c && c.name, 40), look: cleanStr(c && c.look, 220) })).filter((c) => c.name),
-    parts: (Array.isArray(o.parts) ? o.parts : []).slice(0, 4).map((p, i) => ({ n: i + 1, beat: cleanStr(p && p.beat, 200), cliffhanger: cleanStr(p && p.cliffhanger, 160) })),
+    title: clipWords(o.title, 80), logline: clipWords(o.logline, 200), style: clipWords(o.style, 160),
+    characters: (Array.isArray(o.characters) ? o.characters : []).slice(0, 3).map((c) => ({ name: cleanStr(c && c.name, 40), look: clipWords(c && c.look, 220) })).filter((c) => c.name),
+    parts: (Array.isArray(o.parts) ? o.parts : []).slice(0, 4).map((p, i) => ({ n: i + 1, beat: clipWords(p && p.beat, 200), cliffhanger: clipWords(p && p.cliffhanger, 160) })),
   };
   return out.title && out.parts.length === 4 ? out : null;
 }
@@ -729,19 +730,27 @@ ${STORY_SAFETY}
 ${formatNote(outline.format)}
 Outline: ${JSON.stringify(outline)}
 Write part ${n} of 4 as exactly 3 scenes of about 5 to 10 seconds each. The hook is the on-screen line in the first second (at most 8 words). Every image prompt must repeat the fixed look of the characters in it and the visual style so all images match, describe vertical 9:16 framing, and contain no text inside the image.
-Reply with JSON only, in this shape: {"hook":"","scenes":[{"visual":"image prompt, at most 300 characters","voiceover":"at most 160 characters","onscreen":"at most 40 characters"}],"x_post":"post for X, at most 260 characters, starts with Part ${n}/4","tiktok_caption":"at most 150 characters"}`;
+Reply with JSON only, in this shape: {"hook":"","scenes":[{"visual":"image prompt, at most 350 characters","voiceover":"at most 160 characters","onscreen":"at most 40 characters"}],"x_post":"post for X, at most 260 characters, starts with Part ${n}/4","tiktok_caption":"at most 150 characters"}`;
   try {
     const parsed = parseAiJson(await aiComplete(system, "Write part " + n + " of 4.", { maxTokens: 1500, timeoutMs: 22000 }));
     const scenes = (parsed && Array.isArray(parsed.scenes) ? parsed.scenes : []).slice(0, 3)
-      .map((s) => ({ visual: cleanStr(s && s.visual, 320), voiceover: cleanStr(s && s.voiceover, 170), onscreen: cleanStr(s && s.onscreen, 45) })).filter((s) => s.visual);
+      .map((s) => ({ visual: clipWords(s && s.visual, 420), voiceover: clipWords(s && s.voiceover, 170), onscreen: clipWords(s && s.onscreen, 45) })).filter((s) => s.visual);
     if (scenes.length < 2) return res.status(502).json({ error: "The AI returned an unusable episode. Try again." });
-    let x = cleanStr(parsed.x_post, 280);
+    let x = clipWords(parsed.x_post, 280);
     if (!/part\s*\d/i.test(x)) x = ("Part " + n + "/4: " + x).slice(0, 280);
-    res.json({ part: { n, hook: cleanStr(parsed.hook, 60), scenes, x_post: x, tiktok_caption: cleanStr(parsed.tiktok_caption, 150) } });
+    res.json({ part: { n, hook: clipWords(parsed.hook, 60), scenes, x_post: x, tiktok_caption: clipWords(parsed.tiktok_caption, 150) } });
   } catch (e) { res.status(e.status || 500).json({ error: String(e.message || e) }); }
 });
 
 // ---------- Media Finder: trending videos (YouTube) and free stock media (Pexels) ----------
+const mediaHits = [];
+function mediaRateOk(res) {
+  const now = Date.now();
+  while (mediaHits.length && now - mediaHits[0] > 60000) mediaHits.shift();
+  if (mediaHits.length >= 90) { res.status(429).json({ error: "Too many requests. Wait a minute and try again." }); return false; }
+  mediaHits.push(now);
+  return true;
+}
 const mediaCache = new Map();
 async function cachedMedia(k, ttl, fn) {
   const h = mediaCache.get(k);
@@ -758,29 +767,61 @@ const isoDur = (s) => {
   const h = +m[1] || 0, mi = +m[2] || 0, se = +m[3] || 0;
   return (h ? h + ":" + String(mi).padStart(2, "0") : String(mi)) + ":" + String(se).padStart(2, "0");
 };
+let ytSearchDay = { d: "", n: 0 };
+const TRAILER_RE = /\b(trailer|teaser|full movie|official (?:video|music video|lyric|audio|visuali[sz]er)|lyric video|music video)\b/i;
+const isoSecs = (s) => { const m = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(s || ""); return m ? (+m[1] || 0) * 3600 + (+m[2] || 0) * 60 + (+m[3] || 0) : 0; };
+async function ytJson(url) {
+  const r = await fetch(url, { signal: AbortSignal.timeout(9000) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) {
+    const e = new Error(r.status === 400 || r.status === 404 ? "YouTube has no list for that region and category. Try another."
+      : r.status === 403 ? "YouTube refused the request: the key is wrong, the YouTube Data API is not enabled for it, or today's free quota is used up."
+      : "YouTube error (" + r.status + ").");
+    e.status = r.status === 400 || r.status === 404 ? 404 : 502; throw e;
+  }
+  return j;
+}
 app.get("/api/media/trending", needAuth, async (req, res) => {
   const key = process.env.YT_API_KEY;
   if (!key) return res.status(503).json({ error: "YT_API_KEY is not set in Vercel yet." });
-  if (!rateOk(res)) return;
+  if (!mediaRateOk(res)) return;
   const region = /^[A-Za-z]{2}$/.test(req.query.region || "") ? req.query.region.toUpperCase() : "US";
   const cat = /^\d{1,3}$/.test(req.query.cat || "") ? req.query.cat : "";
+  const q = cleanStr(req.query.q, 60);
+  const maxsec = [60, 180].includes(Number(req.query.maxsec)) ? Number(req.query.maxsec) : 0;
+  const hide = req.query.hide !== "0";
+  const sort = req.query.sort === "eng" ? "eng" : "pop";
   try {
-    const items = await cachedMedia("yt|" + region + "|" + cat, 600000, async () => {
-      const u = "https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails&chart=mostPopular&maxResults=12&regionCode=" + region
-        + (cat ? "&videoCategoryId=" + cat : "") + "&key=" + encodeURIComponent(key);
-      const r = await fetch(u, { signal: AbortSignal.timeout(8000) });
-      const j = await r.json().catch(() => ({}));
-      if (!r.ok) {
-        const e = new Error(r.status === 400 || r.status === 404 ? "YouTube has no trending list for that region and category. Try another."
-          : r.status === 403 ? "YouTube refused the request: the key is wrong, the YouTube Data API is not enabled for it, or today's free quota is used up."
-          : "YouTube error (" + r.status + ").");
-        e.status = r.status === 400 || r.status === 404 ? 404 : 502; throw e;
+    const items = await cachedMedia("yt|" + [region, cat, q, maxsec, hide, sort].join("|"), q ? 1800000 : 600000, async () => {
+      const base = "https://www.googleapis.com/youtube/v3/videos?part=snippet,statistics,contentDetails";
+      let u;
+      if (q) {
+        const day = new Date().toISOString().slice(0, 10);
+        if (ytSearchDay.d !== day) ytSearchDay = { d: day, n: 0 };
+        if (ytSearchDay.n >= 30) { const e = new Error("Today's 30 searches are used. They cost a lot of your free YouTube quota, so browse the categories instead."); e.status = 429; throw e; }
+        ytSearchDay.n++;
+        const sj = await ytJson("https://www.googleapis.com/youtube/v3/search?part=snippet&type=video&order=viewCount&maxResults=25&videoDuration=short&publishedAfter="
+          + encodeURIComponent(new Date(Date.now() - 7 * 864e5).toISOString()) + "&regionCode=" + region + "&q=" + encodeURIComponent(q)
+          + (cat ? "&videoCategoryId=" + cat : "") + "&key=" + encodeURIComponent(key));
+        const ids = (sj.items || []).map((i) => i && i.id && i.id.videoId).filter((id) => /^[\w-]{11}$/.test(id || ""));
+        if (!ids.length) return [];
+        u = base + "&id=" + ids.join(",") + "&key=" + encodeURIComponent(key);
+      } else {
+        u = base + "&chart=mostPopular&maxResults=50&regionCode=" + region + (cat ? "&videoCategoryId=" + cat : "") + "&key=" + encodeURIComponent(key);
       }
-      return (j.items || []).filter((v) => v && /^[\w-]{11}$/.test(v.id || "")).map((v) => {
-        const sn = v.snippet || {}, st = v.statistics || {}, th = (sn.thumbnails || {});
-        return { id: v.id, title: clip(sn.title, 120), channel: clip(sn.channelTitle, 60), views: Number(st.viewCount) || 0,
+      const j = await ytJson(u);
+      let list = (j.items || []).filter((v) => v && /^[\w-]{11}$/.test(v.id || "")).map((v) => {
+        const sn = v.snippet || {}, st = v.statistics || {}, th = sn.thumbnails || {};
+        const views = Number(st.viewCount) || 0, likes = Number(st.likeCount) || 0, comments = Number(st.commentCount) || 0;
+        return { id: v.id, title: clip(sn.title, 120), channel: clip(sn.channelTitle, 60), views, likes, comments,
+          eng: views > 0 && (likes || comments) ? Math.round(((likes + comments) / views) * 1000) / 10 : null,
+          secs: isoSecs(v.contentDetails && v.contentDetails.duration), cat: String(sn.categoryId || ""),
           published: sn.publishedAt || "", dur: isoDur(v.contentDetails && v.contentDetails.duration), thumb: httpsOnly((th.medium || th.default || {}).url) };
       });
+      if (hide) list = list.filter((v) => v.cat !== "1" && !TRAILER_RE.test(v.title) && !/vevo/i.test(v.channel));
+      if (maxsec) list = list.filter((v) => v.secs > 0 && v.secs <= maxsec);
+      if (sort === "eng") list = list.filter((v) => v.views >= 5000 && v.eng !== null).sort((a, b) => b.eng - a.eng);
+      return list.slice(0, 20);
     });
     res.json({ items });
   } catch (e) { res.status(e.status || 502).json({ error: String(e.message || e) }); }
@@ -789,7 +830,7 @@ app.get("/api/media/trending", needAuth, async (req, res) => {
 app.get("/api/media/stock", needAuth, async (req, res) => {
   const key = process.env.PEXELS_API_KEY;
   if (!key) return res.status(503).json({ error: "PEXELS_API_KEY is not set in Vercel yet." });
-  if (!rateOk(res)) return;
+  if (!mediaRateOk(res)) return;
   const type = req.query.type === "photos" ? "photos" : "videos";
   const q = cleanStr(req.query.q, 100);
   const url = (type === "photos"
@@ -1027,31 +1068,41 @@ function generateStory(){if(sgen)return;var el=$("#it"),v=(el?el.value:(topic?to
  sgen=true;smsg="";story=null;imgs={};imgMsg={};busyImg={};sprog="Writing the outline…";renderIdeas();
  postJson("/api/story/outline",{title:topic.title,country:topic.country,format:fmt}).then(function(j){if(j.error)throw new Error(j.error);story={outline:j.outline,parts:[]};return nextPart(1)}).catch(function(e){smsg=(e&&e.message)||"Something went wrong. Try again."}).then(finishStory)}
 function resumeStory(){if(sgen||!story)return;sgen=true;smsg="";nextPart(story.parts.length+1).catch(function(e){smsg=(e&&e.message)||"Something went wrong. Try again."}).then(finishStory)}
-var media={sec:"trend",region:"US",cat:"",trend:[],tmsg:"",tbusy:false,type:"videos",q:"",stock:[],smsg:"",sbusy:false,sdone:false};
-var CATS=[["","All"],["10","Music"],["20","Gaming"],["24","Entertainment"],["17","Sports"],["25","News"],["23","Comedy"],["28","Tech"]];
+var media={sec:"trend",region:"US",cat:"",trend:[],tmsg:"",tbusy:false,tq:"",maxsec:0,sort:"pop",hide:true,type:"videos",q:"",stock:[],smsg:"",sbusy:false,sdone:false};
+var CATS=[["","All"],["24","Entertainment"],["23","Comedy"],["17","Sports"],["22","People"],["20","Gaming"],["25","News"],["10","Music"],["28","Tech"]];
 function fmtN(n){return n>=1e6?(n/1e6).toFixed(1)+"M":n>=1e3?Math.round(n/1e3)+"K":String(n)}
 function ago(s){var m=Math.max(1,Math.round((Date.now()-new Date(s).getTime())/6e4));return m<60?m+"m ago":m<1440?Math.round(m/60)+"h ago":Math.round(m/1440)+"d ago"}
 function ytUrl(id){return "https://www.youtube.com/watch?v="+encodeURIComponent(id)}
-function mediaHtml(){var m=media,h='<div class="chips"><a data-msec="trend" class="'+(m.sec==="trend"?'on':'')+'">Trending videos</a><a data-msec="stock" class="'+(m.sec==="stock"?'on':'')+'">Stock photos and video</a></div>';
+function chip(attr,val,on,label){return '<a '+attr+'="'+val+'" class="'+(on?'on':'')+'">'+label+'</a>'}
+function mediaHtml(){var m=media,h='<div class="chips">'+chip("data-msec","trend",m.sec==="trend","Trending videos")+chip("data-msec","stock",m.sec==="stock","Stock photos and video")+'</div>';
  if(m.sec==="trend"){
-  h+='<div class="chips">'+COUNTRIES.filter(function(c){return c!=="GLOBAL"}).map(function(c){return '<a data-mreg="'+c+'" class="'+(m.region===c?'on':'')+'">'+c+'</a>'}).join("")+'</div><div class="chips">'+CATS.map(function(c){return '<a data-mcat="'+c[0]+'" class="'+(m.cat===c[0]?'on':'')+'">'+c[1]+'</a>'}).join("")+'</div><div class="err">'+esc(m.tmsg)+'</div>';
-  h+=m.tbusy?'<p class="empty">Loading what is popular…</p>':(m.trend.length?'<div class="mgrid">'+m.trend.map(function(v,k){return '<div class="card mv" style="--i:'+Math.min(k,10)+'"><a class="mthumb" href="'+esc(ytUrl(v.id))+'" target="_blank" rel="noreferrer">'+(v.thumb?'<img src="'+esc(v.thumb)+'" alt="" loading="lazy">':'')+(v.dur?'<span class="dur">'+esc(v.dur)+'</span>':'')+'</a><div class="mt">'+esc(v.title)+'</div><div class="meta">'+esc(v.channel)+' · '+fmtN(v.views)+' views · '+ago(v.published)+'</div><div class="acts"><a class="xbtn" href="'+esc(ytUrl(v.id))+'" target="_blank" rel="noreferrer">'+ic("ext")+'Watch</a><button class="btn-out" data-mideas="'+k+'" type="button">Make ideas</button><button class="btn-out" data-mstory="'+k+'" type="button">Story</button></div></div>'}).join("")+'</div>':(m.tmsg?'':'<p class="empty">Nothing loaded yet.</p>'));
-  h+='<p class="note">This shows what is popular right now so you can make your own content about it. Watch videos on YouTube. Do not download and re-upload other people’s videos.</p>'}
+  h+='<div class="chips">'+COUNTRIES.filter(function(c){return c!=="GLOBAL"}).map(function(c){return chip("data-mreg",c,m.region===c,c)}).join("")+'</div>'
+  +'<div class="chips">'+CATS.map(function(c){return chip("data-mcat",c[0],m.cat===c[0],c[1])}).join("")+'</div>'
+  +'<div class="chips">'+[[0,"Any length"],[60,"Under 1 min"],[180,"Under 3 min"]].map(function(c){return chip("data-mlen",c[0],m.maxsec===c[0],c[1])}).join("")+chip("data-msort","pop",m.sort==="pop","Most popular")+chip("data-msort","eng",m.sort==="eng","Most engaged")+chip("data-mhide","1",m.hide,m.hide?"Hiding trailers and music videos":"Showing everything")+'</div>'
+  +'<div class="gform"><input class="fi gw" id="tq" type="text" maxlength="60" placeholder="Search YouTube: football, funny, drama…" value="'+esc(m.tq)+'" aria-label="Search YouTube"><button class="btn gw" id="tsearch" type="button"'+(m.tbusy?' disabled':'')+'>'+(m.tq&&!m.tbusy?"Search again":"Search")+'</button></div>'
+  +(m.tq?'<div class="chips">'+chip("data-mclear","1",false,"Clear search: "+esc(m.tq))+'</div>':'')+'<div class="err">'+esc(m.tmsg)+'</div>';
+  h+=m.tbusy?'<p class="empty">Loading what is catching attention…</p>':(m.trend.length?'<div class="mgrid">'+m.trend.map(function(v,k){return '<div class="card mv" style="--i:'+Math.min(k,10)+'"><a class="mthumb" href="'+esc(ytUrl(v.id))+'" target="_blank" rel="noreferrer">'+(v.thumb?'<img src="'+esc(v.thumb)+'" alt="" loading="lazy">':'')+(v.dur?'<span class="dur">'+esc(v.dur)+'</span>':'')+'</a><div class="mt">'+esc(v.title)+'</div><div class="meta">'+esc(v.channel)+' · '+fmtN(v.views)+' views · '+ago(v.published)+(v.eng!==null&&v.eng!==undefined?' · '+v.eng+'% engaged':'')+'</div><div class="acts"><a class="xbtn" href="'+esc(ytUrl(v.id))+'" target="_blank" rel="noreferrer">'+ic("ext")+'Watch</a><button class="btn-out" data-mideas="'+k+'" type="button">Make ideas</button><button class="btn-out" data-mstory="'+k+'" type="button">Story</button></div></div>'}).join("")+'</div>':(m.tmsg?'':'<p class="empty">Nothing matches these filters. Try another category, a longer length, or turn the trailer filter off.</p>'));
+  h+='<p class="note">Engaged means likes plus comments compared with views. Use this to see what holds attention, then make your own version. Watch on YouTube; do not download and re-upload other people’s videos. A search uses far more of your free YouTube quota than browsing, so it is limited to 30 a day.</p>'}
  else{
-  h+='<div class="gform"><input class="fi gw" id="mq" type="text" maxlength="100" placeholder="Search a topic (leave empty to see popular)" value="'+esc(m.q)+'" aria-label="Search"><button class="btn gw" id="ms" type="button"'+(m.sbusy?' disabled':'')+'>'+(m.sbusy?"Searching…":"Search")+'</button></div><div class="chips"><a data-mtype="videos" class="'+(m.type==="videos"?'on':'')+'">Videos</a><a data-mtype="photos" class="'+(m.type==="photos"?'on':'')+'">Photos</a></div><div class="err">'+esc(m.smsg)+'</div>';
+  h+='<div class="gform"><input class="fi gw" id="mq" type="text" maxlength="100" placeholder="Search a topic (leave empty to see popular)" value="'+esc(m.q)+'" aria-label="Search"><button class="btn gw" id="ms" type="button"'+(m.sbusy?' disabled':'')+'>'+(m.sbusy?"Searching…":"Search")+'</button></div><div class="chips">'+chip("data-mtype","videos",m.type==="videos","Videos")+chip("data-mtype","photos",m.type==="photos","Photos")+'</div><div class="err">'+esc(m.smsg)+'</div>';
   h+=m.stock.length?'<div class="mgrid">'+m.stock.map(function(s,k){var c='<div class="card" style="--i:'+Math.min(k,10)+'">';
    if(s.kind==="video")c+='<video class="mvid" controls preload="none" playsinline'+(s.poster?' poster="'+esc(s.poster)+'"':'')+' src="'+esc(s.sd)+'"></video><div class="meta">'+esc(s.credit)+(s.dur?' · '+s.dur+'s':'')+'</div><div class="acts"><a class="xbtn" href="'+esc(s.hd||s.sd)+'" target="_blank" rel="noreferrer" download>'+ic("ext")+'Download</a>';
    else c+='<img class="mimg" src="'+esc(s.thumb)+'" alt="'+esc(s.alt||"Photo")+'" loading="lazy"><div class="meta">'+esc(s.credit)+'</div><div class="acts"><a class="xbtn" href="'+esc(s.full)+'" target="_blank" rel="noreferrer">'+ic("ext")+'Open and save</a>';
    return c+'<button class="btn-out" data-mcopy="'+k+'" type="button">Copy credit</button></div></div>'}).join("")+'</div>':(m.sdone&&!m.smsg?'<p class="empty">No results. Try another word.</p>':'');
   h+='<p class="note">Free to use under the Pexels license. Crediting the creator is appreciated, so copy the credit line when you post.</p>'}
  return h}
-function loadTrend(){media.tbusy=true;media.tmsg="";renderIdeas();return api("/api/media/trending?region="+encodeURIComponent(media.region)+"&cat="+encodeURIComponent(media.cat)).then(function(j){if(j.error){media.tmsg=j.error;media.trend=[]}else{media.trend=j.items}}).catch(function(e){media.tmsg=(e&&e.message)||"Could not load."}).then(function(){media.tbusy=false;renderIdeas()})}
+function loadTrend(){media.tbusy=true;media.tmsg="";renderIdeas();return api("/api/media/trending?region="+encodeURIComponent(media.region)+"&cat="+encodeURIComponent(media.cat)+"&q="+encodeURIComponent(media.tq)+"&maxsec="+media.maxsec+"&sort="+media.sort+"&hide="+(media.hide?1:0)).then(function(j){if(j.error){media.tmsg=j.error;media.trend=[]}else{media.trend=j.items}}).catch(function(e){media.tmsg=(e&&e.message)||"Could not load."}).then(function(){media.tbusy=false;renderIdeas()})}
 function loadStock(){media.sbusy=true;media.smsg="";renderIdeas();return api("/api/media/stock?type="+media.type+"&q="+encodeURIComponent(media.q)).then(function(j){if(j.error){media.smsg=j.error;media.stock=[]}else{media.stock=j.items}media.sdone=true}).catch(function(e){media.smsg=(e&&e.message)||"Could not load."}).then(function(){media.sbusy=false;renderIdeas()})}
 function bindMedia(p){
  $$("[data-msec]",p).forEach(function(a){a.onclick=function(){media.sec=a.dataset.msec;renderIdeas();if(media.sec==="trend"&&!media.trend.length&&!media.tbusy&&!media.tmsg)loadTrend()}});
  $$("[data-mreg]",p).forEach(function(a){a.onclick=function(){media.region=a.dataset.mreg;loadTrend()}});
  $$("[data-mcat]",p).forEach(function(a){a.onclick=function(){media.cat=a.dataset.mcat;loadTrend()}});
- $$("[data-mideas]",p).forEach(function(b){b.onclick=function(){var v=media.trend[+b.dataset.mideas];topic={title:v.title,country:media.region,source:"youtube",volume:v.views,context:"Trending on YouTube in "+media.region+": "+v.channel+", "+fmtN(v.views)+" views."};mode="posts";ideas=[];imsg="";renderIdeas();generate()}});
+ $$("[data-mlen]",p).forEach(function(a){a.onclick=function(){media.maxsec=+a.dataset.mlen;loadTrend()}});
+ $$("[data-msort]",p).forEach(function(a){a.onclick=function(){media.sort=a.dataset.msort;loadTrend()}});
+ $$("[data-mhide]",p).forEach(function(a){a.onclick=function(){media.hide=!media.hide;loadTrend()}});
+ $$("[data-mclear]",p).forEach(function(a){a.onclick=function(){media.tq="";loadTrend()}});
+ if($("#tsearch")){$("#tsearch").onclick=function(){media.tq=$("#tq").value.trim();loadTrend()};$("#tq").onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();$("#tsearch").click()}}}
+ $$("[data-mideas]",p).forEach(function(b){b.onclick=function(){var v=media.trend[+b.dataset.mideas];topic={title:v.title,country:media.region,source:"youtube",volume:v.views,context:"Trending on YouTube in "+media.region+": "+v.channel+", "+fmtN(v.views)+" views"+(v.eng!==null&&v.eng!==undefined?", "+v.eng+"% engaged":"")+"."};mode="posts";ideas=[];imsg="";renderIdeas();generate()}});
  $$("[data-mstory]",p).forEach(function(b){b.onclick=function(){var v=media.trend[+b.dataset.mstory];topic={title:v.title,country:media.region,source:"youtube",volume:v.views,context:""};mode="story";smsg="";renderIdeas();generateStory()}});
  if($("#ms")){$("#ms").onclick=function(){media.q=$("#mq").value.trim();loadStock()};$("#mq").onkeydown=function(e){if(e.key==="Enter"){e.preventDefault();$("#ms").click()}}}
  $$("[data-mtype]",p).forEach(function(a){a.onclick=function(){media.q=$("#mq")?$("#mq").value.trim():media.q;media.type=a.dataset.mtype;media.stock=[];media.sdone=false;loadStock()}});
